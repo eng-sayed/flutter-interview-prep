@@ -98,6 +98,11 @@ details.panel[open]>summary::after{content:"－"}
 .scroller{position:relative;min-width:0}
 .scroller::after{content:"";position:absolute;inset-block:0;left:0;width:28px;background:linear-gradient(to right,var(--bg),transparent);pointer-events:none}
 .result-count{font-size:13px;color:var(--muted)}
+.track-chips{padding-top:2px}
+.track-chip{font-weight:600}
+.track-banner{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:20px 0 4px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.track-banner b{font-size:18px;color:var(--accent)}
+.track-banner span{font-size:13px;color:var(--muted)}
 
 /* sections & cards */
 .sec-head{margin-block:30px 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -301,6 +306,7 @@ details.panel[open]>summary::after{content:"－"}
       </div>
     </div></div>
     <div class="scroller"><div class="chips" id="topics" role="group" aria-label="المواضيع"></div></div>
+    <div class="scroller"><div class="chips track-chips" id="tracks" role="group" aria-label="مسار المذاكرة"></div></div>
     <div class="result-count" id="resultCount"></div>
   </div>
 
@@ -4352,6 +4358,7 @@ const LEVELS={
 };
 const TOPICS={dart:'Dart',async:'Async',widgets:'Widgets & Lifecycle',layout:'Layout',nav:'Navigation',state:'State',net:'Networking',storage:'Storage',arch:'Architecture',test:'Testing',perf:'Performance',platform:'Platform',addapp:'Add-to-App',security:'Security',release:'Release & CI',design:'System Design',code:'Live Coding',ps:'Problem Solving',behavioral:'Behavioral',hr:'HR',english:'English Interview',new:'الجديد'};
 const TOPIC_ORDER=Object.keys(TOPICS);
+const TRACKS={flutter:{label:'Flutter وDart',hint:'الأسئلة التقنية الأساسية والمتقدمة',test:x=>x.tp!=='hr'&&x.tp!=='english'&&x.tp!=='behavioral'},hr:{label:'HR فقط',hint:'أسئلة الموارد البشرية والقصص السلوكية',test:x=>x.tp==='hr'||x.tp==='behavioral'},english:{label:'English Interview',hint:'تدريب الإجابات التقنية بالإنجليزية',test:x=>x.tp==='english'}};
 
 const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const inline=s=>esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
@@ -4437,7 +4444,7 @@ const isDue=id=>ratings[id]==='again'||(ratings[id]==='ok'&&Date.now()-(times[id
 let scale=store.get('flutter-ladder-scale',1);
 function applyScale(){document.documentElement.style.setProperty('--scale',scale)}
 applyScale();
-const ui={level:null,topic:null,filter:'all',q:'',view:'list',idx:0,curId:null};
+const ui={level:null,topic:null,track:'flutter',filter:'all',q:'',view:'list',idx:0,curId:null};
 ui.view=store.get('flutter-ladder-view','list')==='single'?'single':'list';
 ui.curId=store.get('flutter-ladder-cur',null);
 const open=new Set();
@@ -4464,8 +4471,9 @@ $('fontUp').onclick=()=>setScale(0.1);$('fontDown').onclick=()=>setScale(-0.1);
 function renderDue(){const n=Q.filter(x=>isDue(x.id)).length;const el=$('dueN');if(el)el.textContent=n?String(n):''}
 function renderLadder(){
   renderDue();
+  const inTrack=x=>TRACKS[ui.track].test(x);
   $('ladder').innerHTML=Object.entries(LEVELS).map(([k,L])=>{
-    const all=Q.filter(x=>x.lv===k),ok=all.filter(x=>ratings[x.id]==='ok').length;
+    const all=Q.filter(x=>x.lv===k&&inTrack(x)),ok=all.filter(x=>ratings[x.id]==='ok').length;
     const pct=all.length?Math.round(ok/all.length*100):0;
     return `<button class="rung" data-lv="${k}" aria-pressed="${ui.level===k}" style="${cssVars(k)}">
       <span class="lv">${L.name}</span><span class="sub">${L.sub}</span>
@@ -4474,7 +4482,7 @@ function renderLadder(){
   }).join('');
 }
 function renderTopics(){
-  const pool=Q.filter(x=>!ui.level||x.lv===ui.level);
+  const pool=Q.filter(x=>TRACKS[ui.track].test(x)&&(!ui.level||x.lv===ui.level));
   const counts={};pool.forEach(x=>counts[x.tp]=(counts[x.tp]||0)+1);
   if(ui.topic&&!counts[ui.topic])ui.topic=null;
   $('topics').innerHTML=`<button class="chip" data-tp="" aria-pressed="${!ui.topic}">كل المواضيع<span class="n">${pool.length}</span></button>`+
@@ -4483,7 +4491,7 @@ function renderTopics(){
 function matches(x){
   const s=ui.q.trim().toLowerCase();
   const r=ratings[x.id];
-  return (!ui.level||x.lv===ui.level)&&(!ui.topic||x.tp===ui.topic)
+  return TRACKS[ui.track].test(x)&&(!ui.level||x.lv===ui.level)&&(!ui.topic||x.tp===ui.topic)
     &&(ui.filter==='all'||(ui.filter==='hot'&&x.hot)||(ui.filter==='todo'&&!r)||(ui.filter==='again'&&r==='again')||(ui.filter==='ok'&&r==='ok')||(ui.filter==='due'&&isDue(x.id))||(ui.filter==='notes'&&!!notes[x.id]))
     &&(!s||(()=>{const hay=(x.q+' '+x.body.join(' ')+x.f.join(' ')+x.t.join(' ')+' '+(notes[x.id]||'')).toLowerCase();return s.split(/\s+/).every(w=>hay.includes(w))})());
 }
@@ -4508,13 +4516,14 @@ function cardHTML(x){
     <div class="ans" id="a-${x.id}" ${isOpen?'':'hidden'}>${isOpen?answerHTML(x):''}</div></article>`;
 }
 function render(){
-  renderLadder();renderTopics();
+  renderLadder();renderTracks();renderTopics();
   const v=visible();
-  $('resultCount').textContent=v.length===Q.length?`${Q.length} سؤال`:`${v.length} من ${Q.length} سؤال`;
+  const total=Q.filter(x=>TRACKS[ui.track].test(x)).length;
+  $('resultCount').textContent=v.length===total?`${total} سؤال في مسار ${TRACKS[ui.track].label}`:`${v.length} من ${total} سؤال في مسار ${TRACKS[ui.track].label}`;
   document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===ui.view));
   if(!v.length){main.innerHTML='<div class="empty">مفيش أسئلة بالفلتر ده. جرّب تغيّر البحث أو الفلتر.</div>';return}
   if(ui.view==='single'){renderSingle(v);return}
-  let html='';
+  let html=`<div class="track-banner"><b>${TRACKS[ui.track].label}</b><span>${TRACKS[ui.track].hint}</span></div>`;
   for(const k of LV_ORDER){
     const items=v.filter(x=>x.lv===k);if(!items.length)continue;
     html+=`<section style="${cssVars(k)}"><div class="sec-head"><h2>${LEVELS[k].name}</h2><p>${LEVELS[k].sub} · ${items.length} سؤال</p></div>
@@ -4581,8 +4590,11 @@ function goTo(id,{openIt=false}={}){
   el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');
 }
 function syncFilterChips(){document.querySelectorAll('#filters .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.f===ui.filter))}
+function renderTracks(){
+  $('tracks').innerHTML=Object.entries(TRACKS).map(([k,t])=>`<button class="chip track-chip" data-track="${k}" aria-pressed="${ui.track===k}">${t.label}<span class="n">${Q.filter(t.test).length}</span></button>`).join('');
+}
 function randomQ(){
-  const v=visible().length?visible():Q;
+  const v=visible().length?visible():Q.filter(x=>TRACKS[ui.track].test(x));
   const pool=v.filter(x=>ratings[x.id]!=='ok');
   const src=pool.length?pool:v;
   const pick=src[Math.floor(Math.random()*src.length)];
@@ -4602,6 +4614,7 @@ document.addEventListener('click',e=>{
   }
   if(t.dataset.view){setView(t.dataset.view);return}
   if(t.dataset.lv){ui.level=ui.level===t.dataset.lv?null:t.dataset.lv;ui.topic=null;render();return}
+  if(t.dataset.track){ui.track=t.dataset.track;ui.level=null;ui.topic=null;ui.filter='all';syncFilterChips();render();$('main').scrollIntoView({behavior:'smooth',block:'start'});return}
   if(t.dataset.tp!==undefined&&t.closest('#topics')){ui.topic=t.dataset.tp||null;render();return}
   if(t.dataset.f){ui.filter=t.dataset.f;syncFilterChips();render();return}
 });
