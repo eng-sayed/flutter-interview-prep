@@ -4091,6 +4091,255 @@ Flutter 3.47 ركّز جزء كبير من شغله على الـdesktop، ول�
 - API بيخلي النافذة تكبر وتصغر على حسب المحتوى.
 
 **Flavors** بقت مدعومة على Windows وLinux، زي الموبايل. فتقدر تعمل نسخة dev ونسخة prod من الـdesktop app بنفس الطريقة.
+### j | addapp | hot
+Q: يعني إيه Flutter Add-to-App، وإمتى أختاره؟
+A:
+تضيف شاشة أو feature بـFlutter لتطبيق native موجود، بدل إعادة كتابته كله. الـhost يفضل مسؤولًا عن التطبيق ويعرض Flutter تدريجيًا. ده مناسب لتجربة feature مشتركة أو migration تدريجية؛ لكنه يضيف تكلفة دمج وصيانة واختبار للـnative والـFlutter معًا.
+الـhost هو التطبيق الأصلي، والـFlutter project فيه Dart وassets وplugins، والـembedder يربط الـengine بالمنصة. الـchannel اختياري للتواصل وليس شرطًا لعرض الشاشة.
+T: لا تفترض إن كل شركة كبيرة تستخدمه أو إنه أفضل من native؛ قارن تكلفة الفريق، الحجم، الأداء، والتكامل.
+
+### j | addapp
+Q: إيه الفرق بين Flutter app وmodule وhost؟
+A:
+الـhost هو Android أو iOS app النهائي الذي يوقع ويُنشر. الـFlutter module مشروع مصمم للدمج، ويمكن توزيعه كـartifacts بدل source. التطبيق Flutter العادي مستقل لكنه يمكن دمجه أيضًا؛ دليل iOS الحالي يوصي بتطبيق Flutter جديد عند بدء التكامل لأول مرة. ملفات `.android` و`.ios` في module مولدة؛ لا تعتمد على تعديلها يدويًا لأنه قد يضيع عند إعادة التوليد.
+F: هل module بيتنشر لوحده على المتجر؟ ← لا؛ الـhost ينتج التطبيق النهائي.
+
+### j | addapp | hot
+Q: FlutterEngine وFlutterActivity وFlutterViewController: مين بيعمل إيه؟
+A:
+الـengine يشغّل Dart ويحتفظ بالـruntime والـstate ويمكن أن يعيش بدون واجهة ظاهرة. `FlutterActivity` على Android و`FlutterViewController` على iOS يربطان واجهة native بالـengine لعرض Flutter وتوصيل input وlifecycle. لا تخلط بين عمر الشاشة وعمر الـengine؛ إغلاق الشاشة لا يعني دائمًا إيقاف الـengine المخبأ.
+
+### m | addapp | hot
+Q: أدمج Flutter في Android إزاي: source ولا AAR؟
+A:
+للـsource: أنشئ module بـ`flutter create -t module my_flutter`، ثم اتبع دليل Android لإضافة `.android/include_flutter.groovy` إلى settings والاعتماد على `:flutter`. الـhost يحتاج Flutter SDK وأدوات متوافقة. للـbinary: `flutter build aar` يولّد Maven repository محليًا يتضمن artifacts وأوضاع البناء؛ اربط المستودعات والـdependencies حسب المخرجات والدليل، ووزّعها داخليًا بإصدارات واضحة.
+F: إيه الفرق العملي؟ ← source للتعديل السريع؛ AAR يعزل توزيع الـartifact لكنه يحتاج بناء ونشر ومطابقة debug/profile/release وdependencies.
+T: لا تضف `include(":flutter")` يدويًا مع السكربت؛ السكربت نفسه يضم المشروع والـplugins. راجع إعدادات Gradle حسب إصدار Flutter والـhost.
+
+### m | addapp | hot
+Q: أدمج Flutter في iOS إزاي، وإيه الجديد في SwiftPM؟
+A:
+دليل Flutter الحالي لتكامل جديد على iOS يستخدم Swift Package Manager: مع Flutter 3.44+ وXcode 15+ نفّذ `flutter build swift-package --platform ios` من مشروع Flutter، ثم أضف `FlutterNativeIntegration` والـbuild settings والـscripts للـhost كما في الدليل. لو أضفت dependency جديدة أعد توليد الـpackage. للتطوير يمكن تفعيل إعادة بناء كود Flutter من Xcode مع تثبيت SDK.
+الـCocoaPods والـframeworks مسارات legacy موجودة في مشاريع قديمة؛ لا تجمعها عشوائيًا مع التكامل الجديد. من 3.44، SwiftPM هو الافتراضي لـnative dependencies مع fallback لـCocoaPods عند الحاجة؛ راجع توافق plugins والنسخة المستخدمة.
+
+### m | addapp | hot
+Q: ليه أعمل pre-warm وcache للـengine؟ وإمتى أتخلص منه؟
+A:
+بدء الـengine وتنفيذ Dart قبل فتح الشاشة يقللان انتظار المستخدم عند أول عرض، لكنهما يستهلكان موارد حتى لو لم تُفتح الشاشة. على Android خزّن engine في `FlutterEngineCache` وافتحه بـ`FlutterActivity.withCachedEngine`؛ على iOS احتفظ بمرجع قوي للـengine ثم مرره للـview controller. قارن cold وwarm على جهاز حقيقي قبل القرار.
+حدد مالك الـengine وسياسة تنظيفه: عند إنهاء الحاجة إليه افصل الـview ونظف handlers والموارد، وأزل cache entry ثم destroy إن لم يعد مستخدمًا. لا تدمر engine ما زال متصلًا بواجهة أو تعتمد عليه مهمة أخرى.
+T: الـcache يحتفظ بالـengine والـDart state؛ إعادة فتح الشاشة لا تعني بدء session جديدة.
+
+### m | addapp
+Q: هل ينفع أغير initial route كل مرة مع cached engine؟
+A:
+الـinitial route تُحدد قبل بدء Dart entrypoint. لو الـengine شغال مسبقًا، `initialRoute` عند فتح الشاشة لا تعيد تشغيله ولا تغير الـroute الأولى. للطلبات اللاحقة استخدم contract واضح عبر channel أو navigation API متفق عليها، أو أنشئ engine جديدًا إذا كان العزل مطلوبًا. انتبه للـreadiness والطلبات المكررة والـdeep links أثناء تشغيل الشاشة.
+
+### m | addapp | hot
+Q: إزاي Flutter والـnative يتكلموا مع بعض؟
+A:
+`MethodChannel` لنداء method ونتيجة أو خطأ، و`EventChannel` لتدفق أحداث، و`BasicMessageChannel` لتبادل رسائل. اسم القناة والـcodec والـmessenger لازم يتطابقوا على الطرفين؛ كل engine له messenger خاص. صمم الأخطاء والـnull والـtimeouts والـcancellation والـlifecycle صراحة، ولا تفترض أن الرسالة وصلت قبل تسجيل الـhandler.
+F: لو method غير مدعومة؟ ← استخدم `notImplemented` وتعامل مع `MissingPluginException` في Dart.
+
+### m | addapp
+Q: Pigeon ولا MethodChannel؟
+A:
+Pigeon يولّد Dart وKotlin وSwift من schema مشتركة، فيقلل أخطاء أسماء الرسائل والـtypes للـAPIs الأكبر. لا يلغي حدود الـplatform أو أخطاء التشغيل أو الحاجة لإدارة التوافق والـlifecycle. MethodChannel مناسب لاتفاق صغير وبسيط؛ في الحالتين اختبر الأخطاء والتغييرات بين نسخ الـhost والـfeature.
+
+### s | addapp | hot
+Q: إيه FlutterEngineGroup؟ وهل الـengines بتشارك الـstate؟
+A:
+ينشئ عدة engines تستفيد من مشاركة بعض الموارد، مثل GPU context وfont metrics وisolate group snapshot، بينما لكل engine isolate وnavigation وstate مستقلين. أول engine له تكلفة بدء عادية؛ يستمر الاشتراك ما دام engine من المجموعة حيًا. تواصل الحالات عبر الـhost والـchannels أو مصدر بيانات مصمم لذلك، لا عبر افتراض مشاركة Dart globals.
+T: التوثيق يذكر تكلفة ثابتة إضافية صغيرة في سياق قياس محدد، وليس أن أول engine يستهلك 180 MB. قِس الذاكرة على مشروعك وأجهزتك؛ plugins والـassets والـUI تغير النتيجة.
+
+### s | addapp
+Q: شاشة كاملة ولا FlutterFragment ولا جزء من الشاشة؟
+A:
+`FlutterActivity` مناسب لشاشة Android مستقلة؛ `FlutterFragment` يلائم navigation أو layout مبنيًا على fragments؛ يمكن دمج view داخل native UI لكنك تتحمل تفاصيل attachment وlifecycle وinput والـaccessibility. على iOS يمكن عرض `FlutterViewController` أو احتواؤه كـchild مع احترام قواعد UIKit. اختبر focus والـkeyboard والـgestures وتداخل الـviews قبل اختيار المزج الجزئي.
+
+### s | addapp
+Q: إزاي أتعامل مع navigation وBack وdeep links في hybrid app؟
+A:
+اتفق على مالك كل جزء من الـstack: الـnative يفتح ويغلق الـfeature وFlutter يدير routes الداخلية مثلًا. اختبر Android system/predictive back وiOS interactive swipe مع وجود route داخلية وعند root؛ سلوك الرجوع يعتمد على embedding والإعدادات وليس مضمونًا في كل تصميم. استخدم `PopScope` حيث يناسب، وتأكد أن التغييرات لا تكسر native back.
+للـdeep link: حدد نقطة استقبال واحدة، تحقق من المدخلات، ثم مرر طلب تنقل للـengine الصحيح حتى لو كان cached أو لم يصبح جاهزًا بعد. اختبر cold start وwarm start وإعادة إرسال نفس الرابط.
+
+### s | addapp | hot
+Q: أشارك الـsession والـtoken إزاي من غير ما أعمل ثغرة؟
+A:
+حدد source of truth واحدًا ومالكًا للـlogin وrefresh وlogout؛ اعرض أقل API يحتاجه Flutter، مثل تنفيذ طلب authenticated من الـhost بدل كشف token إن أمكن. لو كان تمرير token ضروريًا، قلل عمره وصلاحياته ولا تسجله في logs أو analytics أو تخزنه مرتين بلا حاجة. استخدم تخزين النظام الآمن والـTLS، وعالج refresh المتزامن والـlogout أثناء وجود الطلبات وأحداث انتهاء الجلسة.
+T: الـplatform channel ليست security boundary ضد كود يعمل داخل نفس العملية.
+
+### s | addapp
+Q: إيه مشاكل الـplugins والـlifecycle اللي ممكن تظهر؟
+A:
+تحقق من تسجيل الـplugins لكل engine، ومن توافقها مع تعدد الـengines والـactivity attachment. بعض plugins تحتاج Activity أو view controller أو permissions أو callbacks ولا تعمل بنفس الصورة عندما يكون الـengine في الخلفية. اختبر rotation وbackground/foreground وتغيير الـActivity وإغلاق الشاشة أثناء عملية، ونظف subscriptions وhandlers والـreferences لتجنب التسريب.
+
+### s | addapp
+Q: إزاي أقيس تأثير Add-to-App على الحجم والأداء؟
+A:
+ابنِ baseline للـhost قبل الدمج ونسخة بعده بنفس الإعدادات والجهاز. قارن download/install size الفعلي وABIs، وزمن الضغط حتى أول frame مفيد للـcold والـwarm، والذاكرة قبل العرض وأثناءه وبعد الإغلاق. كرر القياس على جهاز حقيقي في profile/release مناسب، واستخدم DevTools وأدوات Android وInstruments.
+قلل assets وplugins غير اللازمة واختر توزيع ABI مناسبًا للأجهزة المدعومة، ولا تحذف architecture يحتاجها مستخدموك. `--obfuscate` و`--split-debug-info` لحماية أسماء الرموز وإدارة symbolication، وليسا ضمانًا لتقليل الحجم.
+
+### m | addapp
+Q: أعمل debug وhot reload إزاي للـhost؟
+A:
+شغّل الـhost في debug من Android Studio أو Xcode ثم من مشروع Flutter استخدم `flutter attach -d <deviceId>`؛ يمكنك بدء attach قبل تشغيل الـengine، وسيتصل عند توفر Dart VM. بعدها استخدم hot reload وbreakpoints وDevTools. لو غيرت native code أو plugins أو إعدادات التكامل، أعد build وتشغيل الـhost عند الحاجة؛ hot reload لا يطبق هذه التغييرات.
+
+### s | addapp
+Q: أختبر وأوزع feature مدموجة إزاي؟
+A:
+اختبر domain وwidget داخل Flutter، والـchannel contracts بأطراف وهمية، ثم native UI/end-to-end على الـhost الفعلي للجهازين. غطِّ opening وback وlogout والـpermissions وprocess death والـdeep links ونسخ plugins. في CI ثبّت نسخة Flutter وأدوات native، ابنِ artifacts لكل build mode، وانشرها مع version وprovenance وsymbols، ثم ابنِ host مستهلكًا لها واختبره. خطط لتوافق contract والـrollback.
+
+### m | addapp
+Q: إيه أشهر أسباب فشل build أو ظهور شاشة سوداء؟
+A:
+ابدأ من logs ثم افحص توافق Flutter وGradle وAGP وKotlin وXcode وmin SDK/deployment target، والـrepositories والـtransitive dependencies، وتسجيل plugins ونسخة الـartifact وbuild mode. الشاشة الفارغة قد تنتج عن engine لم يبدأ أو route أو exception أو view لم تتصل؛ لا تفترض سببًا واحدًا. تأكد من إعادة بناء artifact بعد تغيير الكود أو dependencies، وأن الـhost يستخدمه فعلًا.
+
+### m | addapp | hot
+Q: تمرين حقيقي 1: ابنِ Profile feature جوه Android native
+A:
+الهدف: تطبيق Kotlin موجود يفتح شاشة Profile مكتوبة بـFlutter، ويطلب اسمًا تجريبيًا من الـhost ويرجع له حدث إغلاق. ابدأ من عينة Flutter الرسمية `add_to_app` المرتبطة في README؛ اتبع تعليماتها وإصداراتها بدل اختراع مشروع host ناقص. شغّل العينة الأصلية أولًا وسجّل النتيجة، ثم أنشئ branch للتجربة.
+- أضف صفحة Flutter تعرض loading ثم اسم المستخدم أو رسالة خطأ وزر إعادة المحاولة، وزر Done. استخدم بيانات تجريبية فقط.
+- سجّل `MethodChannel` باسم `demo.profile/host` على messenger الخاص بالـengine نفسه. الـhost ينفذ `getProfile` ويرجع map فيه `name`، ويرد `notImplemented` على غيره. في Dart اعرض الاسم وعالج `PlatformException` و`MissingPluginException`.
+- عند Done أرسل `closeProfile` للـhost ليغلق الـActivity وفق تصميم العينة؛ امنع الضغط المتكرر والتعامل مع رد بعد إغلاق الـwidget.
+- اختبر: نجاح، خطأ native، method غير موجودة، فتح وإغلاق 10 مرات، وrotation ثم back. شغّل `flutter attach` أثناء debug وسجل خطواتك.
+معيار النجاح: native → Flutter → native يعمل، ولا يحدث crash عند الخطأ أو الإغلاق، وتستطيع شرح مسؤولية كل طرف. هذا تمرين بناء وليس كود مشروع جاهز داخل الموقع.
+
+### m | addapp
+Q: تمرين حقيقي 2: قارن cached engine وnavigation
+A:
+في نفس التطبيق أضف مسارين: engine جديد لكل فتح، وengine يبدأ مسبقًا ويُعاد استخدامه. قِس من tap حتى أول frame مفيد على جهاز حقيقي 10 مرات لكل حالة، وسجل median والظروف والذاكرة قبل وبعد. أضف شاشة Flutter داخلية وارجع منها ثم أغلق الـfeature. افتحها مرة ثانية ولاحظ هل state والـroute السابقة بقيتا؛ صمم reset أو استمرارًا مقصودًا.
+اختبر deep link جديدًا بعد بدء الـcached engine: لا تعتمد على initial route؛ ابعث طلبًا للـfeature عندما يكون handler جاهزًا. معيار النجاح: قياسات قابلة لإعادة التجربة وتفسير تكلفة الذاكرة مقابل latency، وليس رقمًا محددًا مسبقًا.
+
+### s | addapp
+Q: تمرين حقيقي 3: من contract إلى Pigeon وmultiple engines
+A:
+حوّل `getProfile` و`closeProfile` إلى schema Pigeon، ولّد الطرفين بالإصدار المثبت في المشروع، واختبر success وerror وتوافق البيانات. بعدها افتح تجربتين مستقلتين بـ`FlutterEngineGroup` وفق العينة الرسمية: غيّر state في الأولى وأثبت أن الثانية لا تراها تلقائيًا؛ مرر حدث logout عبر الـhost لكليهما.
+قِس أول engine والثاني والذاكرة بعد إغلاقهما؛ اختبر بقاء engine واحد ثم تدمير الجميع. معيار النجاح: state معزولة، logout يصل لكل instance، وhandlers والـengines تُنظف دون تسريب.
+
+### s | addapp
+Q: تمرين حقيقي 4: iOS والتوزيع وCI
+A:
+كرر Profile على iOS باستخدام العينة الرسمية أو host Swift بسيط، وبـSwiftPM وفق دليل الإصدار المثبت؛ اختبر تقديم وإغلاق الشاشة والـinteractive back والـchannel والـplugins. بعد ذلك ابنِ Android AAR وiOS Swift package، واستهلكهما من host نظيف، ثم أضف CI يثبت إصدارات SDK ويبني debug وrelease ويتحقق من smoke test.
+اختبار إضافي: غيّر contract دون تحديث الـhost وشاهد الفشل، ثم ضع سياسة versioning وتوافق وrollback. سجّل المشاكل الفعلية والقرارات لتستخدمها في إجابة مقابلة.
+
+### s | addapp
+Q: سيناريو مقابلة: تطبيق بنكي native يريد نقل checkout لـFlutter، تبدأ منين؟
+A:
+اسأل عن الأجهزة، authentication، متطلبات الأمان والـaccessibility، نسبة إعادة الاستخدام، وحدود الأداء وحجم التطبيق. ابدأ proof of concept صغيرًا وfeature flag وrollback، واتفق على ملكية session والتنقل وAPI versioning. قارن cached engine بالبدء عند الطلب، وحدد قياسات cold/warm والذاكرة، واختبارات end-to-end على المنصتين. لا تنقل بيانات الدفع الحساسة أو تخزنها بلا مراجعة أمنية، وخطط للمراقبة وحالات فشل الشبكة والـidempotency.
+
+### s | release | hot
+Q: إيه موضوع AGP 9 وBuilt-in Kotlin في Flutter Add-to-App؟
+A:
+مع AGP 9 أصبح Kotlin المدمج هو الاتجاه الجديد، وFlutter 3.47 أضاف دعم تفعيله بعد ترحيل الـhost والـplugins. في add-to-app لا يستطيع Flutter migrator تعديل مشروع Android native أثناء build، لذلك يجب ضبط `android.newDsl` و`android.builtInKotlin` في host ومراجعة كل plugin. لا تفعّل الخيار عشوائيًا: ثبّت Flutter/AGP/Gradle، اقرأ migration guide، وابنِ host نظيفًا قبل رفعه.
+F: لو plugin قديم؟ ← ثبّت التوافق المؤقت، أو حدّثه/استبدله، وسجّل سبب القرار في CI.
+
+### s | release
+Q: كيف تجعل Flutter plugin متوافقًا مع Swift Package Manager؟
+A:
+راجع الـplugin والـexample app والـnative dependencies، وأضف descriptors أو التهيئة التي يطلبها Flutter، ثم اختبره في host يستخدم SwiftPM وفي host يعتمد fallback إلى CocoaPods عند الضرورة. لا تخلط ملفات integration قديمة مع `FlutterNativeIntegration` الجديد، وثبّت minimum Flutter وXcode في changelog. الاختبار الحقيقي يشمل clean checkout وdevice build ونسخ متعددة من plugin.
+
+### s | platform | hot
+Q: ما الذي يجب معرفته عن App Extensions وApp Clips مع Flutter؟
+A:
+هي targets لها lifecycle وقيود وحجم ووقت تشغيل وAPIs مختلفة عن التطبيق الرئيسي. لا تفترض أن engine أو plugin يحتاج UIKit/Activity سيعمل داخل extension. افصل ما يلزم في native target، وقلل dependencies، واختبر signing وentitlements وbuild phases وفتح الرابط من النظام. استخدم Flutter فقط حيث تناسب القيود، واعتبر native UI أحيانًا الخيار الأبسط.
+
+### s | design
+Q: صمّم observability لميزة Flutter مدمجة في تطبيق native.
+A:
+عرّف correlation ID من الـhost إلى Flutter، وسجّل أحداث lifecycle والـengine والـchannel والـfirst useful frame مع version وbuild mode، لكن لا تسجل token أو بيانات شخصية. اجمع crash وANR وfailed channel calls وtimeouts مع نسبة نجاح الفتح cold/warm. اربط كل feature flag وartifact version بالقياسات، وضع dashboards وalerts وحدودًا للـsampling وخطة rollback. جرّب سيناريو channel timeout وengine crash بدل الاكتفاء بـhappy path.
+
+### s | security
+Q: كيف تدخل Flutter AI Toolkit في منتج production؟
+A:
+اعتبرها طبقة UI ومزوّد LLM قابلًا للاستبدال، وليست مكانًا لوضع secrets. مرّر الطلبات عبر backend أو Firebase AI Logic بسياسات واضحة، وطبّق redaction وrate limits وميزانية ورفضًا للمحتوى وحماية من prompt injection. اختبر streaming وfunction calling وانقطاع الشبكة وreplay، ولا تعرض tool result للمستخدم بلا تحقق. راقب latency والتكلفة وجودة الإجابة، واحتفظ بمسار native عندما تكون البيانات حساسة.
+
+### m | hr | hot
+Q: Tell me about yourself in an HR interview.
+A:
+Use a 60–90 second structure: present role and years, strongest Flutter/native integration experience, one measurable result, and why this role is a good next step. Example: “I’m a Flutter engineer focused on production mobile apps. Recently I worked on a hybrid migration where I owned the Flutter feature, platform channels, release pipeline, and performance measurement. I enjoy turning ambiguous product requirements into maintainable code, and I’m looking for a team where I can contribute to architecture as well as delivery.” Customize every claim to your real experience.
+T: لا تحفظ النص حرفيًا؛ احفظ الهيكل وأضف نتيجة قابلة للقياس.
+
+### m | hr
+Q: Why do you want to work with us?
+A:
+Connect three things: a specific product or engineering challenge you researched, the skills you can contribute, and what you want to learn. Avoid generic praise. A strong answer names a real reason, such as a large native app adopting Flutter incrementally, then explains how your Add-to-App and debugging experience maps to it.
+
+### m | hr
+Q: What is your biggest weakness?
+A:
+Choose a real but manageable behavior, explain the impact, and show the system you use to improve it. For example: “I used to over-polish implementation details before validating the product path. I now time-box exploration, agree on acceptance criteria first, and share a small spike early.” Do not disguise a strength as a weakness or mention a critical integrity issue.
+
+### m | hr
+Q: Tell me about a conflict with a teammate.
+A:
+Use Situation–Action–Result. Describe the technical disagreement without blaming a person, explain how you clarified constraints and tested alternatives, then state the decision and what you changed afterward. Include what you would do differently. The interviewer is looking for communication, ownership, and respect under pressure.
+
+### m | hr
+Q: Why are you leaving your current job?
+A:
+Stay factual and forward-looking: mention the kind of scope, ownership, or learning you want next. Do not disclose confidential details or attack former colleagues. Example: “I’m proud of what I delivered, and I’m now looking for a role with larger cross-platform architecture ownership and closer collaboration with native teams.”
+
+### m | hr
+Q: How do you handle a tight deadline?
+A:
+Clarify the deadline and the non-negotiable outcome, split must-have from nice-to-have, surface risks early, and propose a staged delivery. Protect quality on security, data correctness, and crash paths; negotiate scope instead of silently shipping fragile work. After delivery, schedule cleanup and document the trade-off.
+
+### s | hr | hot
+Q: Describe a production incident you handled.
+A:
+Give context, user impact, detection, your first safe action, diagnosis, fix, and prevention. Mention metrics and communication: feature flag or rollback, logs/traces, a small reproducible case, and a post-incident action. Never claim you solved it alone if the team collaborated; explain your exact contribution.
+
+### s | hr
+Q: What does senior ownership mean to you?
+A:
+It means making outcomes predictable: clarify requirements, choose proportionate architecture, communicate trade-offs, review and mentor, measure production behavior, and own follow-up when a decision fails. It is not being the only person who can touch the code.
+
+### m | hr
+Q: What salary or level are you expecting?
+A:
+Answer with a researched range and context, not a single ultimatum. Ask how the company defines level, total compensation, and responsibilities, then connect your range to scope and market data. Keep the conversation professional and avoid inventing competing offers.
+
+### j | english
+Q: Explain Flutter’s widget, element, and render object trees in English.
+A:
+“A widget is an immutable configuration. An element is the long-lived instance that holds a widget’s position and state relationship. A render object performs layout and painting. During rebuilds Flutter can replace widget configurations while reusing elements and render objects when the type and key match.”
+F: Follow up with a concrete example involving a `StatefulWidget` and a key.
+
+### m | english
+Q: Explain a platform channel in English.
+A:
+“A platform channel is a typed-by-convention message boundary between Dart and host code. MethodChannel is request/response, EventChannel is a stream, and BasicMessageChannel exchanges messages. The host and Dart side must agree on the name, codec, methods, nullability, errors, and lifecycle. For a large API I prefer Pigeon to generate matching code.”
+
+### m | english
+Q: How would you explain a difficult technical trade-off to a non-technical stakeholder?
+A:
+“I start with the user outcome and constraints, give two viable options, and explain the cost, risk, and reversibility of each in plain language. I recommend one, state what we are not solving now, and define a measurable checkpoint. I avoid presenting implementation details as decisions unless they affect time, quality, or risk.”
+
+### m | english
+Q: Walk me through debugging a black screen in a hybrid app.
+A:
+“I first capture the host and Dart logs and confirm whether the engine started and produced a first frame. Then I check attachment, route or entrypoint, plugin registration, channel exceptions, artifact freshness, and native version compatibility. I reproduce on a clean build and a real device, add one focused diagnostic at a time, and verify the fix in both cold and warm launches.”
+
+### s | english
+Q: How do you design a safe migration from native to Flutter?
+A:
+“I would start with a narrow, reversible feature behind a flag. I’d define ownership for navigation, authentication, analytics, and data, then build a contract between the host and Flutter. I would compare cold and warm startup, memory, size, accessibility, crash-free sessions, and delivery speed against a native baseline. Only after the metrics and rollback path are acceptable would I expand the surface area.”
+
+### s | english
+Q: Give a concise system-design answer for multiple Flutter engines.
+A:
+“I would use an EngineGroup when independent Flutter views need lower incremental startup and memory cost, while keeping each isolate’s state separate. The host owns shared session state and broadcasts lifecycle events through a versioned contract. I would measure the first engine, subsequent engines, and cleanup, and I would explicitly handle back navigation, plugins, and engine destruction.”
+
+### j | english
+Q: What is the difference between hot reload and a full restart?
+A:
+“Hot reload injects updated Dart code while preserving most state. A hot restart recreates the Dart isolate and loses state. Native code, plugin changes, build settings, and some initialization changes require rebuilding the host application.”
+
+### m | english
+Q: How do you answer when you do not know something?
+A:
+“I would be explicit about what I know, state my hypothesis, and explain how I would verify it safely—by checking the versioned documentation, creating a small reproduction, or measuring it. I would not invent a confident answer, especially for security or release behavior.”
+
 </script>
 
 <script>
@@ -4101,7 +4350,7 @@ const LEVELS={
   s:{name:'Senior',sub:'Internals وperformance وsystem design وbehavioral',c:'--s',cs:'--s-soft'},
   u:{name:'اللي فاتك',sub:'الجديد في Flutter وDart من 2024 لحد 2026',c:'--u',cs:'--u-soft'}
 };
-const TOPICS={dart:'Dart',async:'Async',widgets:'Widgets & Lifecycle',layout:'Layout',nav:'Navigation',state:'State',net:'Networking',storage:'Storage',arch:'Architecture',test:'Testing',perf:'Performance',platform:'Platform',security:'Security',release:'Release & CI',design:'System Design',code:'Live Coding',ps:'Problem Solving',behavioral:'Behavioral',hr:'HR',new:'الجديد'};
+const TOPICS={dart:'Dart',async:'Async',widgets:'Widgets & Lifecycle',layout:'Layout',nav:'Navigation',state:'State',net:'Networking',storage:'Storage',arch:'Architecture',test:'Testing',perf:'Performance',platform:'Platform',addapp:'Add-to-App',security:'Security',release:'Release & CI',design:'System Design',code:'Live Coding',ps:'Problem Solving',behavioral:'Behavioral',hr:'HR',english:'English Interview',new:'الجديد'};
 const TOPIC_ORDER=Object.keys(TOPICS);
 
 const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
